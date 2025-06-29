@@ -28,13 +28,27 @@ export default function EventForm({ initialData = {}, onSubmit, onCancel }: Prop
   )
   const [type, setType] = useState<EventType>(initialData.type || EventType.Personal)
   const [priority, setPriority] = useState<EventPriority>(initialData.priority || EventPriority.Normal)
+  const [error, setError] = useState('') // ❗ New state for error messages
 
   const handleSubmit = () => {
-    if (!title || !start || !end) return
+    if (!title || !start || !end) {
+      setError('Title, start time, and end time are required.')
+      return
+    }
+
+    const startDate = new Date(start)
+    const endDate = new Date(end)
+
+    if (endDate <= startDate) {
+      setError('End time must be after start time.')
+      return
+    }
+
+    setError('')
     onSubmit({
       title,
-      start: new Date(start),
-      end: new Date(end),
+      start: startDate,
+      end: endDate,
       type: type as EventType,
       priority: priority as EventPriority,
     })
@@ -79,6 +93,8 @@ export default function EventForm({ initialData = {}, onSubmit, onCancel }: Prop
           <option key={val} value={val}>{val}</option>
         ))}
       </select>
+
+      {error && <p className="text-red-500 text-sm">{error}</p>} {/* ❗ Error message */}
 
       <Button onClick={handleSubmit} className="w-full">Save</Button>
       {onCancel && (
