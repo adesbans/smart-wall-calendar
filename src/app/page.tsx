@@ -5,7 +5,7 @@ import CalendarView from '@/components/Calendar'
 import AddEventModal from '@/components/modal/AddEventModal'
 import EventDetailsModal from '@/components/modal/EventDetailsModal'
 import EditEventModal from '@/components/modal/EditEventModal'
-import { CalendarEvent } from '@/lib/calendarEvent'
+import { CalendarEvent, EventPriority, EventType } from '@/lib/calendarEvent'
 import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Textarea } from '@/components/ui/textarea'
@@ -30,13 +30,11 @@ export default function HomePage() {
       body: JSON.stringify(newEvent),
     })
     const created = await res.json()
-
     const normalized = {
       ...created,
       start: new Date(created.start),
       end: new Date(created.end),
     }
-
     setEvents((prev) => [...prev, normalized])
   }
 
@@ -69,17 +67,61 @@ export default function HomePage() {
     const fetchEvents = async () => {
       const res = await fetch('/api/events')
       const data = await res.json()
-
       const normalizeEvent = (event: any): CalendarEvent => ({
         ...event,
         start: typeof event.start === 'string' ? new Date(event.start) : event.start,
         end: typeof event.end === 'string' ? new Date(event.end) : event.end,
       })
-
       setEvents(data.map(normalizeEvent))
     }
     fetchEvents()
   }, [])
+
+  const handleSmartSchedule = async () => {
+    try {
+      setLoadingAi(true)
+      setAiResponse('')
+      const res = await fetch('/api/ai/generate-schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userPrompt: aiPrompt, events }),
+      })
+      const data = await res.json()
+      setLoadingAi(false)
+
+      try {
+        const aiEvents: Omit<CalendarEvent, 'id'>[] = JSON.parse(data.result)
+
+        for (const event of aiEvents) {
+          // Fallbacks for optional fields
+          const newEvent = {
+            ...event,
+            start: new Date(event.start),
+            end: new Date(event.end),
+            type: event.type || EventType.Personal,
+            priority: event.priority || EventPriority.Normal,
+          }
+
+          // Save to backend
+          const res = await fetch('/api/events', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(newEvent),
+          })
+          const saved = await res.json()
+          setEvents((prev) => [...prev, { ...saved, start: new Date(saved.start), end: new Date(saved.end) }])
+        }
+
+        setAiResponse('✅ New events successfully added to your calendar.')
+        setAiModalOpen(false)
+      } catch (e) {
+        setAiResponse('⚠️ Failed to parse AI response. Try again or tweak your prompt.')
+      }
+    } catch (err) {
+      setAiResponse('❌ Something went wrong. Please try again.')
+      setLoadingAi(false)
+    }
+  }
 
   return (
     <main className="min-h-screen bg-gray-50 p-6 flex flex-col items-center">
@@ -125,21 +167,10 @@ export default function HomePage() {
           />
 
           <Button
-            onClick={async () => {
-              setLoadingAi(true)
-              setAiResponse('')
-              const res = await fetch('/api/ai/generate-schedule', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userPrompt: aiPrompt, events }),
-              })
-              const data = await res.json()
-              setAiResponse(data.result)
-              setLoadingAi(false)
-            }}
+            onClick={handleSmartSchedule}
             disabled={loadingAi || !aiPrompt.trim()}
           >
-            {loadingAi ? 'Thinking...' : 'Generate Schedule'}
+            {loadingAi ? 'Thinking...' : 'Generate & Apply Schedule'}
           </Button>
 
           {aiResponse && (
