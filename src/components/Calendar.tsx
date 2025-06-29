@@ -1,7 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Calendar, dateFnsLocalizer, View } from 'react-big-calendar'
+import { Calendar, dateFnsLocalizer } from 'react-big-calendar'
 import { format, parse, startOfWeek, getDay } from 'date-fns'
 import { enUS } from 'date-fns/locale'
 import 'react-big-calendar/lib/css/react-big-calendar.css'
@@ -21,25 +20,20 @@ const localizer = dateFnsLocalizer({
 })
 
 export default function CalendarView({ events, onDoubleClickEvent }: CalendarViewProps) {
-  const [defaultView, setDefaultView] = useState<View>('week')
-
-  useEffect(() => {
-    if (typeof window !== 'undefined' && window.innerWidth < 768) {
-      setDefaultView('day')
-    }
-  }, [])
+  const now = new Date()
 
   return (
-    <div className="h-[90vh] w-full p-2 sm:p-4 text-black overflow-y-auto">
+    <div className="h-[90vh] w-full p-4 text-black">
       <Calendar
         localizer={localizer}
         events={events}
         startAccessor="start"
         endAccessor="end"
-        defaultView={defaultView}
+        defaultView="week"
         views={['day', 'week', 'month']}
         style={{ height: '100%' }}
         onDoubleClickEvent={onDoubleClickEvent}
+        scrollToTime={new Date(now.setHours(now.getHours() - 1, 0, 0, 0))} // scroll to 1 hour before now
       />
     </div>
   )
