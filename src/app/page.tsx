@@ -96,8 +96,8 @@ export default function HomePage() {
         if (change.action === 'add') {
           const newEvent = {
             title: change.title,
-            start: new Date(new Date(change.start).toLocaleString()),
-            end: new Date(new Date(change.end).toLocaleString()),
+            start: new Date(new Date(change.start).toLocaleString('en-US', { timeZone: 'America/New_York' })),
+            end: new Date(new Date(change.end).toLocaleString('en-US', { timeZone: 'America/New_York' })),
             type: change.type || EventType.Personal,
             priority: change.priority || EventPriority.Normal,
           }

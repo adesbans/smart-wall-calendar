@@ -39,6 +39,8 @@ export async function POST(req: Request) {
   - If the prompt is vague, prefer placing events after 5pm.
   - Avoid personal events during working hours (9am–5pm) unless the user says so.
   - Spread recurring or similar events across different days.
+  - The user is located in the Eastern Time Zone (America/New_York).
+  - Interpret and respond to time-related instructions (like "at 7:30am") as local Eastern Time.  
   - If no changes are needed, return an empty array: []
 
   Here is the user's current calendar:
