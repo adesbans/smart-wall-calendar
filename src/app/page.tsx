@@ -17,7 +17,6 @@ export default function HomePage() {
   const [showDetailsModal, setShowDetailsModal] = useState(false)
   const [showEditModal, setShowEditModal] = useState(false)
 
-  // AI modal state
   const [aiModalOpen, setAiModalOpen] = useState(false)
   const [aiPrompt, setAiPrompt] = useState('')
   const [aiResponse, setAiResponse] = useState('')
@@ -78,50 +77,84 @@ export default function HomePage() {
   }, [])
 
   const handleSmartSchedule = async () => {
+  try {
+    setLoadingAi(true)
+    setAiResponse('')
+    const res = await fetch('/api/ai/generate-schedule', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ userPrompt: aiPrompt, events }),
+    })
+    const data = await res.json()
+    console.log('AI raw response:', data)
+    setLoadingAi(false)
+
     try {
-      setLoadingAi(true)
-      setAiResponse('')
-      const res = await fetch('/api/ai/generate-schedule', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ userPrompt: aiPrompt, events }),
-      })
-      const data = await res.json()
-      setLoadingAi(false)
+      const diffs = JSON.parse(data.result)
 
-      try {
-        const aiEvents: Omit<CalendarEvent, 'id'>[] = JSON.parse(data.result)
-
-        for (const event of aiEvents) {
-          // Fallbacks for optional fields
+      for (const change of diffs) {
+        if (change.action === 'add') {
           const newEvent = {
-            ...event,
-            start: new Date(event.start),
-            end: new Date(event.end),
-            type: event.type || EventType.Personal,
-            priority: event.priority || EventPriority.Normal,
+            title: change.title,
+            start: new Date(new Date(change.start).toLocaleString()),
+            end: new Date(new Date(change.end).toLocaleString()),
+            type: change.type || EventType.Personal,
+            priority: change.priority || EventPriority.Normal,
           }
 
-          // Save to backend
           const res = await fetch('/api/events', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(newEvent),
           })
           const saved = await res.json()
-          setEvents((prev) => [...prev, { ...saved, start: new Date(saved.start), end: new Date(saved.end) }])
+          setEvents((prev) => [...prev, {
+            ...saved,
+            start: new Date(saved.start),
+            end: new Date(saved.end),
+          }])
         }
 
-        setAiResponse('✅ New events successfully added to your calendar.')
-        setAiModalOpen(false)
-      } catch (e) {
-        setAiResponse('⚠️ Failed to parse AI response. Try again or tweak your prompt.')
+        if (change.action === 'update' && change.id) {
+          const existing = events.find(e => e.id === change.id)
+          if (!existing) continue
+
+          const updated = {
+            ...existing,
+            start: new Date(change.start),
+            end: new Date(change.end),
+            title: change.title || existing.title,
+            type: change.type || existing.type,
+            priority: change.priority || existing.priority,
+          }
+
+          await fetch(`/api/events/${updated.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updated),
+          })
+          setEvents((prev) => prev.map(e => e.id === updated.id ? updated : e))
+        }
+
+        if (change.action === 'delete' && change.id) {
+          await fetch(`/api/events/${change.id}`, { method: 'DELETE' })
+          setEvents((prev) => prev.filter(e => e.id !== change.id))
+        }
       }
-    } catch (err) {
-      setAiResponse('❌ Something went wrong. Please try again.')
-      setLoadingAi(false)
+
+      setAiResponse('✅ Schedule successfully updated.')
+      setAiModalOpen(false)
+      setAiPrompt('')
+    } catch (e) {
+      console.error('Failed to parse AI result:', e)
+      setAiResponse('⚠️ Failed to parse AI response. Try again or tweak your prompt.')
     }
+  } catch (err) {
+    console.error('AI request failed:', err)
+    setAiResponse('❌ Something went wrong. Please try again.')
+    setLoadingAi(false)
   }
+}
 
   return (
     <main className="min-h-screen bg-gray-50 p-6 flex flex-col items-center">
@@ -160,7 +193,7 @@ export default function HomePage() {
           </DialogHeader>
 
           <Textarea
-            placeholder="E.g. Add 2 workouts and shift all meetings later."
+            placeholder="E.g. Add a workout on Thursday after 5pm and delete my 10am meeting."
             value={aiPrompt}
             onChange={(e) => setAiPrompt(e.target.value)}
             className="mb-4"
