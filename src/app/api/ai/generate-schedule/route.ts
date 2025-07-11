@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { CalendarEvent } from '@/lib/calendarEvent'
+import { DateTime } from 'luxon'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -17,81 +18,55 @@ function formatEvents(events: CalendarEvent[]) {
 export async function POST(req: Request) {
   const { events, userPrompt } = await req.json()
 
-  const prompt = `
-  You are a smart and reliable personal scheduling assistant.
+  const easternNow = DateTime.now().setZone('America/New_York')
+  const easternDateOnly = easternNow.toFormat('yyyy-MM-dd')
+  const easternISO = easternNow.toISO()
 
-  You will receive:
-  1. A list of the user's current calendar events.
-  2. A prompt describing what changes they want made.
+  const systemPrompt = `
+You are a smart and reliable personal scheduling assistant.
 
-  Your task is to return a **JSON array of diffs** representing only the changes to be made. Each object in the array must have an "action" field with one of the following values:
+The user is in the Eastern Time Zone (America/New_York).
+Your ONLY job is to respond with a raw JSON array of changes to the calendar.
+Never explain, never introduce the response, and never wrap it in markdown.
 
-  - "add": Add a new event
-  - "update": Update an existing event (requires "id")
-  - "delete": Delete an event (requires "id")
+Rules:
+- Only output changed events — do not repeat unchanged ones.
+- Valid actions: "add", "update", "delete"
+- Always use ISO 8601 UTC datetime (YYYY-MM-DDTHH:mm:ss)
+- Do NOT overlap events.
+- Avoid scheduling between 10pm–7am unless the user says so.
+- Use full object structure for "update" actions
+- Return an empty array [] if no changes are needed
 
-  ### STRICT RULES:
-  - Only return the **changed events** — do NOT repeat unchanged ones.
-  - Use ISO 8601 UTC format (YYYY-MM-DDTHH:mm:ss) for all date/time fields.
-  - Do not overlap events.
-  - For "update" actions, always include the full event object: id, title, start, end, type, and priority — even if only one field is changing.
-  - Do not return partial updates.
-  - If the prompt is vague, prefer placing events after 5pm.
-  - Avoid personal events during working hours (9am–5pm) unless the user says so.
-  - Spread recurring or similar events across different days.
-  - The user is located in the Eastern Time Zone (America/New_York).
-  - Interpret and respond to time-related instructions (like "at 7:30am") as local Eastern Time.  
-  - If no changes are needed, return an empty array: []
+Time Window Interpretation:
+- "Morning" → strictly 08:00–11:00 ET — prefer the earliest available time (08:00) unless taken
+- "Afternoon" → 12:00–16:00 ET
+- "Evening" → 17:00–21:00 ET
 
-  Here is the user's current calendar:
-  ${formatEvents(events)}
+Date Understanding:
+- Interpret "today", "tomorrow", and "next week" using the user's local date (${easternDateOnly})
+- "Tomorrow" means the day after ${easternDateOnly} in Eastern Time
+- Convert all local times to UTC before outputting
+  `.trim()
 
-  The user says: "${userPrompt}"
+  const userMessage = `
+Current local time (Eastern): ${easternISO}
+Today is: ${easternDateOnly}
 
-  ### RESPONSE FORMAT:
+Here is the user's current calendar:
+${formatEvents(events)}
 
-  Return ONLY a raw JSON array like this (NO explanation, no markdown, no preamble):
-
-  [
-    {
-      "action": "add",
-      "title": "Evening Workout",
-      "start": "2025-07-03T17:30:00",
-      "end": "2025-07-03T18:30:00",
-      "type": "Personal",
-      "priority": "Normal"
-    },
-    {
-      "action": "update",
-      "id": "abc123",
-      "start": "2025-07-04T09:00:00",
-      "end": "2025-07-04T10:00:00"
-    },
-    {
-      "action": "delete",
-      "id": "def456"
-    }
-  ]
-
-  If the user’s request has already been satisfied or makes no changes, respond with: []
-  DO NOT add any text outside the JSON array.
-  `
-
+The user says: "${userPrompt}"
+  `.trim()
 
   try {
     const response = await openai.chat.completions.create({
       model: 'gpt-4',
+      temperature: 0.4,
       messages: [
-        {
-          role: 'system',
-          content: `
-          You are a smart AI assistant for weekly calendar planning. 
-          You help users update their schedules by suggesting new, modified, or removed events 
-          based on the user's prompt and current calendar context. Your responses must always follow strict JSON formatting.`
-        },
-        { role: 'user', content: prompt }
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage },
       ],
-      temperature: 0.7,
     })
 
     const result = response.choices[0].message?.content
