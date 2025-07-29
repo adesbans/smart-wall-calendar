@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import OpenAI from 'openai'
 import { CalendarEvent } from '@/lib/calendarEvent'
 import { DateTime } from 'luxon'
+import { normalizeRequest } from '@/lib/normalizeRequest'
 
 const openai = new OpenAI({
   apiKey: process.env.OPENAI_API_KEY,
@@ -22,42 +23,37 @@ export async function POST(req: Request) {
   const easternDateOnly = easternNow.toFormat('yyyy-MM-dd')
   const easternISO = easternNow.toISO()
 
+  const parsed = normalizeRequest(userPrompt)
+
   const systemPrompt = `
-You are a smart and reliable personal scheduling assistant.
+You are a smart and reliable scheduling assistant.
 
 The user is in the Eastern Time Zone (America/New_York).
-Your ONLY job is to respond with a raw JSON array of changes to the calendar.
-Never explain, never introduce the response, and never wrap it in markdown.
+Use ISO 8601 UTC datetime format (YYYY-MM-DDTHH:mm:ss) for all fields.
+Never return unchanged events. Never overlap events. Never schedule between 10pm–7am ET unless instructed.
 
-Rules:
-- Only output changed events — do not repeat unchanged ones.
-- Valid actions: "add", "update", "delete"
-- Always use ISO 8601 UTC datetime (YYYY-MM-DDTHH:mm:ss)
-- Do NOT overlap events.
-- Avoid scheduling between 10pm–7am unless the user says so.
-- Use full object structure for "update" actions
-- Return an empty array [] if no changes are needed
+Time ranges:
+- "morning": 06:00–08:59
+- "afternoon": 12:00–16:00
+- "evening": 17:00–21:00
+- Work hours are 09:00–17:00 ET Monday–Friday — avoid personal events then.
 
-Time Window Interpretation:
-- "Morning" → strictly 08:00–11:00 ET — prefer the earliest available time (08:00) unless taken
-- "Afternoon" → 12:00–16:00 ET
-- "Evening" → 17:00–21:00 ET
+If a prompt says "tomorrow", use: ${easternDateOnly} + 1 day (Eastern Time).
+If "work week" or weekdays are requested, use Monday–Friday of the current week starting from today (${easternDateOnly}).
 
-Date Understanding:
-- Interpret "today", "tomorrow", and "next week" using the user's local date (${easternDateOnly})
-- "Tomorrow" means the day after ${easternDateOnly} in Eastern Time
-- Convert all local times to UTC before outputting
-  `.trim()
+Return ONLY a raw JSON array. No explanations, markdown, or preamble.
+`.trim()
 
   const userMessage = `
 Current local time (Eastern): ${easternISO}
-Today is: ${easternDateOnly}
+User request: "${userPrompt}"
 
-Here is the user's current calendar:
+Parsed intent:
+${JSON.stringify(parsed, null, 2)}
+
+Current calendar:
 ${formatEvents(events)}
-
-The user says: "${userPrompt}"
-  `.trim()
+`.trim()
 
   try {
     const response = await openai.chat.completions.create({

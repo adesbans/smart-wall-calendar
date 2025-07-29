@@ -196,6 +196,14 @@ export default function HomePage() {
             placeholder="E.g. Add a workout on Thursday after 5pm and delete my 10am meeting."
             value={aiPrompt}
             onChange={(e) => setAiPrompt(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault()
+                if (aiPrompt.trim() && !loadingAi) {
+                  handleSmartSchedule()
+                }
+              }
+            }}
             className="mb-4"
           />
 
